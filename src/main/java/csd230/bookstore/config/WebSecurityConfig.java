@@ -4,12 +4,12 @@ import csd230.bookstore.auth.JwtAuthorizationFilter;
 import csd230.bookstore.services.CustomUserDetailsService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -23,74 +23,62 @@ public class WebSecurityConfig {
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthorizationFilter jwtAuthorizationFilter;
 
-    public WebSecurityConfig(CustomUserDetailsService userDetailsService,
-                             JwtAuthorizationFilter jwtAuthorizationFilter) {
+    public WebSecurityConfig(CustomUserDetailsService userDetailsService, JwtAuthorizationFilter jwtAuthorizationFilter) {
         this.userDetailsService = userDetailsService;
         this.jwtAuthorizationFilter = jwtAuthorizationFilter;
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration)
-            throws Exception {
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
         return authenticationConfiguration.getAuthenticationManager();
     }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .authorizeHttpRequests(requests -> requests
+                // 1. Disable CSRF (we use JWT, so we are stateless)
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/h2-console/**", "/api/rest/**"))
 
-                        // 1. Public resources
-                        .requestMatchers("/h2-console/**", "/login", "/css/**", "/js/**", "/error").permitAll()
+                // 2. Set Session Management to STATELESS
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+                .authorizeHttpRequests((requests) -> requests
+                        // A. PUBLIC STATIC ASSETS: Allow React to load
+                        .requestMatchers("/", "/index.html", "/assets/**", "/vite.svg", "/favicon.ico").permitAll()
+
+                        // B. PUBLIC AUTH ENDPOINTS: Allow login requests
                         .requestMatchers("/api/rest/auth/**").permitAll()
 
-                        // 2. Swagger docs
-                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        // C. PUBLIC DEBUG TOOLS: Swagger and H2 Console
+                        .requestMatchers("/h2-console/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 
-                        // 3. CPU endpoints — GET for any authenticated user, mutating for ADMIN only
-                        .requestMatchers(HttpMethod.GET,    "/api/rest/cpus/**").hasAnyRole("USER", "ADMIN")
-                        .requestMatchers(HttpMethod.POST,   "/api/rest/cpus/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.PUT,    "/api/rest/cpus/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/rest/cpus/**").hasRole("ADMIN")
-
-                        // 4. GPU endpoints — GET for any authenticated user, mutating for ADMIN only
-                        .requestMatchers(HttpMethod.GET,    "/api/rest/gpus/**").hasAnyRole("USER", "ADMIN")
-                        .requestMatchers(HttpMethod.POST,   "/api/rest/gpus/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.PUT,    "/api/rest/gpus/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/rest/gpus/**").hasRole("ADMIN")
-
-                        // 5. All other REST endpoints — any authenticated role
+                        // D. SECURE THE REST API: Requires ROLE_USER or ROLE_ADMIN (via JWT)
                         .requestMatchers("/api/rest/**").hasAnyRole("USER", "ADMIN")
 
-                        // 6. Web UI Admin actions
+                        // E. SECURE MVC ADMIN PAGES: (Only if you still use Thymeleaf occasionally)
                         .requestMatchers("/books/add", "/books/edit/**", "/books/delete/**").hasRole("ADMIN")
 
-                        // 7. Everything else requires authentication — MUST be last
-                        .anyRequest().authenticated()
+                        // F. Everything else (like the SPA forwarding) needs to be accessible
+                        .anyRequest().permitAll()
                 )
+
+                // 3. EXCEPTION HANDLING: Return 401 for API errors instead of redirecting to a login page
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, authException) -> {
                             if (request.getRequestURI().startsWith("/api/rest/")) {
                                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                             } else {
-                                response.sendRedirect("/login");
+                                // For everything else, the React app will handle navigation
+                                response.setStatus(HttpServletResponse.SC_OK);
                             }
                         })
                 )
-                .addFilterBefore(jwtAuthorizationFilter, UsernamePasswordAuthenticationFilter.class)
-                .formLogin(form -> form
-                        .loginPage("/login")
-                        .defaultSuccessUrl("/books", true)
-                        .permitAll()
-                )
-                .logout(logout -> logout
-                        .logoutUrl("/logout")
-                        .logoutSuccessUrl("/login?logout")
-                        .permitAll()
-                );
 
+                // 4. ADD JWT FILTER: Runs before the standard authentication filter
+                .addFilterBefore(jwtAuthorizationFilter, UsernamePasswordAuthenticationFilter.class);
+
+        // Required for H2 Console to work in a browser frame
         http.headers(headers -> headers.frameOptions(frameOptions -> frameOptions.disable()));
-        http.csrf(csrf -> csrf.ignoringRequestMatchers("/h2-console/**", "/api/rest/**"));
 
         return http.build();
     }
@@ -102,6 +90,7 @@ public class WebSecurityConfig {
 
     @Bean
     public DaoAuthenticationProvider authenticationProvider() {
+        // FIX: Pass userDetailsService to the constructor
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider(userDetailsService);
         authProvider.setPasswordEncoder(passwordEncoder());
         return authProvider;
