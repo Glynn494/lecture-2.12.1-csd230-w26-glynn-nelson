@@ -1,18 +1,19 @@
 package csd230.bookstore.config;
 
-import csd230.bookstore.auth.JwtAuthorizationFilter; // NEW
+import csd230.bookstore.auth.JwtAuthorizationFilter;
 import csd230.bookstore.services.CustomUserDetailsService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.authentication.AuthenticationManager; // NEW
+import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration; // NEW
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter; // NEW
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import jakarta.servlet.http.HttpServletResponse;
 
 @Configuration
@@ -20,23 +21,25 @@ import jakarta.servlet.http.HttpServletResponse;
 public class WebSecurityConfig {
 
     private final CustomUserDetailsService userDetailsService;
-    private final JwtAuthorizationFilter jwtAuthorizationFilter; // NEW: Added
+    private final JwtAuthorizationFilter jwtAuthorizationFilter;
 
-    public WebSecurityConfig(CustomUserDetailsService userDetailsService, JwtAuthorizationFilter jwtAuthorizationFilter) {
+    public WebSecurityConfig(CustomUserDetailsService userDetailsService,
+                             JwtAuthorizationFilter jwtAuthorizationFilter) {
         this.userDetailsService = userDetailsService;
         this.jwtAuthorizationFilter = jwtAuthorizationFilter;
     }
 
-    // NEW: AuthenticationManager is needed by AuthController to verify login credentials
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration)
+            throws Exception {
         return authenticationConfiguration.getAuthenticationManager();
     }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .authorizeHttpRequests((requests) -> requests
+                .authorizeHttpRequests(requests -> requests
+
                         // 1. Public resources
                         .requestMatchers("/h2-console/**", "/login", "/css/**", "/js/**", "/error").permitAll()
                         .requestMatchers("/api/rest/auth/**").permitAll()
@@ -44,22 +47,27 @@ public class WebSecurityConfig {
                         // 2. Swagger docs
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 
-                        // 3. REST API Security (Requires Role)
-//                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/rest/**").hasAnyRole("USER", "ADMIN")
-//                        .requestMatchers("/api/rest/**").hasRole("ADMIN")
-// Temporarily open for Lecture 2.11.2. Will secure in future JWT lecture.
-//                        .requestMatchers("/api/rest/**").permitAll()
-// Secure the REST API. Only authenticated users with roles can access it.
+                        // 3. CPU endpoints — GET for any authenticated user, mutating for ADMIN only
+                        .requestMatchers(HttpMethod.GET,    "/api/rest/cpus/**").hasAnyRole("USER", "ADMIN")
+                        .requestMatchers(HttpMethod.POST,   "/api/rest/cpus/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT,    "/api/rest/cpus/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/rest/cpus/**").hasRole("ADMIN")
+
+                        // 4. GPU endpoints — GET for any authenticated user, mutating for ADMIN only
+                        .requestMatchers(HttpMethod.GET,    "/api/rest/gpus/**").hasAnyRole("USER", "ADMIN")
+                        .requestMatchers(HttpMethod.POST,   "/api/rest/gpus/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT,    "/api/rest/gpus/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/rest/gpus/**").hasRole("ADMIN")
+
+                        // 5. All other REST endpoints — any authenticated role
                         .requestMatchers("/api/rest/**").hasAnyRole("USER", "ADMIN")
 
-
-                                // 4. Web UI Admin
+                        // 6. Web UI Admin actions
                         .requestMatchers("/books/add", "/books/edit/**", "/books/delete/**").hasRole("ADMIN")
 
+                        // 7. Everything else requires authentication — MUST be last
                         .anyRequest().authenticated()
                 )
-                // REST API Error Handling:
-                // If the URL starts with /api/rest/, return 401. Otherwise, redirect to /login.
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, authException) -> {
                             if (request.getRequestURI().startsWith("/api/rest/")) {
@@ -70,12 +78,12 @@ public class WebSecurityConfig {
                         })
                 )
                 .addFilterBefore(jwtAuthorizationFilter, UsernamePasswordAuthenticationFilter.class)
-                .formLogin((form) -> form
+                .formLogin(form -> form
                         .loginPage("/login")
                         .defaultSuccessUrl("/books", true)
                         .permitAll()
                 )
-                .logout((logout) -> logout
+                .logout(logout -> logout
                         .logoutUrl("/logout")
                         .logoutSuccessUrl("/login?logout")
                         .permitAll()
@@ -94,13 +102,8 @@ public class WebSecurityConfig {
 
     @Bean
     public DaoAuthenticationProvider authenticationProvider() {
-        // FIX: Pass userDetailsService to the constructor
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider(userDetailsService);
         authProvider.setPasswordEncoder(passwordEncoder());
         return authProvider;
     }
 }
-
-
-
-

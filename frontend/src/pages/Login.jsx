@@ -7,29 +7,28 @@ const Login = () => {
     const { setToken } = useAuth();
     const navigate = useNavigate();
 
-    // NEW for 2.12.1: Use location to check for "expired" query parameter
+    // Read the 'expired' query parameter set by the Axios response interceptor.
+    // e.g. /login?expired=true  →  isExpired will be "true" (a truthy string)
     const location = useLocation();
     const queryParams = new URLSearchParams(location.search);
     const isExpired = queryParams.get("expired");
 
-    const [email, setEmail] = useState(""); // Variable named 'email' to match Backend LoginReq
+    const [email,    setEmail]    = useState(""); // Named 'email' to match LoginReq.java
     const [password, setPassword] = useState("");
-    const [error, setError] = useState("");
+    const [error,    setError]    = useState("");
 
     const handleLogin = async (e) => {
         e.preventDefault();
-        setError(""); // Clear previous errors
+        setError(""); // Clear any previous error message
 
         try {
-            // 1. Call the Spring Boot AuthController
-            // We pass { email, password } to match the LoginReq.java POJO
+            // Call the Spring Boot AuthController at POST /api/rest/auth/login
             const res = await api.post("/auth/login", { email, password });
 
-            // 2. Save the JWT to context (which also updates localStorage)
+            // Save the JWT — authProvider stores it in both React state and localStorage
             setToken(res.data.token);
 
-            // 3. Redirect to home page
-            // 'replace: true' prevents the user from clicking "back" to the login page
+            // Redirect to home; replace:true prevents "back" returning to login
             navigate("/", { replace: true });
         } catch (err) {
             console.error("Login Error:", err.response?.data || err.message);
@@ -42,7 +41,7 @@ const Login = () => {
             <h1>Bookstore Admin</h1>
             <h2>Sign In</h2>
 
-            {/* NEW for 2.12.1: Session Expired Warning */}
+            {/* Session Expired Warning — shown when redirected by the Axios interceptor */}
             {isExpired && (
                 <div style={{
                     backgroundColor: '#fff3cd',
@@ -58,7 +57,7 @@ const Login = () => {
                 </div>
             )}
 
-            {/* Error Message Display */}
+            {/* Login Error Message */}
             {error && (
                 <p style={{
                     color: "white",
@@ -82,9 +81,11 @@ const Login = () => {
                         onChange={(e) => setEmail(e.target.value)}
                         required
                         style={{ width: "100%", padding: "8px", boxSizing: "border-box" }}
-                        placeholder="e.admin"
+                        placeholder="e.g. admin"
                     />
-                    <small style={{display:"block", color:"#888", marginTop: "4px"}}>Hint: try 'admin' or 'user'</small>
+                    <small style={{ display: "block", color: "#888", marginTop: "4px" }}>
+                        Hint: try 'admin' or 'user'
+                    </small>
                 </div>
 
                 <div style={{ marginBottom: "20px" }}>

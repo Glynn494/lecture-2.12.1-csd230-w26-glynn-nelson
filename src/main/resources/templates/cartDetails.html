@@ -6,11 +6,9 @@
 <body>
 <h1>Your Shopping Cart</h1>
 
-
 <div th:if="${cart.products.empty}">
     <p>Your cart is empty.</p>
 </div>
-
 
 <table border="1" th:unless="${cart.products.empty}">
     <thead>
@@ -24,22 +22,20 @@
     <tbody>
     <tr th:each="product : ${cart.products}">
         <td>
-            <!-- 1. Handle Books/Magazines (they extend PublicationEntity which has 'title') -->
-            <!-- T(...) is used to reference the specific class type for checking -->
+            <!-- Books / Magazines (PublicationEntity has 'title') -->
             <span th:if="${product instanceof T(csd230.bookstore.entities.PublicationEntity)}"
                   th:text="${product.title}"></span>
 
-
-            <!-- 2. Handle Tickets (they have 'description') -->
+            <!-- Tickets (TicketEntity has 'description') -->
             <span th:if="${product instanceof T(csd230.bookstore.entities.TicketEntity)}"
                   th:text="${product.description}"></span>
+
+            <!-- Computer Hardware: CPU / GPU (ComputerHardwareEntity has 'name') — NEW -->
+            <span th:if="${product instanceof T(csd230.bookstore.entities.ComputerHardwareEntity)}"
+                  th:text="${product.name}"></span>
         </td>
 
-
-        <!-- Use the new helper method we added to ProductEntity -->
         <td th:text="${product.productType}"></td>
-
-
         <td th:text="${product.price}"></td>
         <td>
             <a th:href="@{/cart/remove/{id}(id=${product.id})}">Remove</a>
@@ -48,17 +44,9 @@
     </tbody>
 </table>
 
-
 <br/>
 <p>
     <a th:href="@{/books}">Continue Shopping</a>
 </p>
 </body>
 </html>
-
-
-
-
-
-
-
